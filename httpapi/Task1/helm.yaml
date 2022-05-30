@@ -1,0 +1,151 @@
+HELM CHART:
+Helm is called the package manager for Kubernetes. Helm helps you deploy, update and manage Kubernetes applications.
+
+1. Create a new chart:
+
+=> helm create ri
+ri/
+├── .helmignore   # Contains patterns to ignore when packaging Helm charts.
+├── Chart.yaml    # Information about your chart
+├── values.yaml   # Configuration values of the chart
+├── charts/       # Charts that this chart depends on
+└── templates/    # The template files
+    └── tests/    # The test files
+
+2. Helm charts store their dependencies in 'charts/'. 
+
+For example, this Chart.yaml declares two dependencies:
+
+# ri/Chart.yaml
+apiVersion: v2
+name: ri
+dependencies:
+- name: nginx
+  version: "1.2.3"
+  repository: "https://example.com/charts" OR repository: "file://../dependency_chart/nginx"
+
+3. Deploy templateto an environment
+deploy_template() {
+	helm upgrade --force --recreate-pods --debug \
+	--set image.repository="${CI_REGISTRY_IMAGE}/${CI_PROJECT_NAME}" \
+	--set image.tag="${CI_COMMIT_SHORT_SHA}" \
+	--set environment="${CI_ENVIRONMENT_NAME}" \
+	--set-string git_commit="${CI_COMMIT_SHORT_SHA}" \
+	--set git_ref="${CI_COMMIT_REF_SLUG}" \
+	--set ci_job_id="${CI_JOB_ID}" \
+	$(image_pull_settings) \
+	$(project_specific_deploy_args) \
+	--wait \
+	--install $(deployment_name) ${CI_PROJECT_DIR}/helm-chart/${CI_PROJECT_NAME}
+}  
+
+4. Blue-Green deployment using Helm chart
+-helm create bluegreen
+-Chart.yaml:
+	apiVersion: v1
+	appVersion: "1.0"
+	description: A Helm chart for Kubernetes Blue/Green Deployment
+	name: bluegreen
+	version: 0.1.0
+-values.yaml:
+	green:
+	  enabled: false
+
+	blue:
+	  enabled: false
+
+	productionSlot: blue
+
+	replicaCount: 1
+
+	ingress:
+	  hostname: domain.com
+	  stagehostname: stage.domain.com
+
+	index: hello world
+-templates/configmap.yaml:
+	apiVersion: v1
+	kind: ConfigMap
+	metadata:
+	  name: {{ template "blue-green.fullname" . }}
+	  labels:
+		release: {{ .Release.Name }}
+		chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+		app: {{ template "blue-green.name" . }}
+	data:
+	  # When the config map is mounted as a volume, these will be created as files.
+	  index.html: {{ .Values.index | quote }}
+	  test.txt: test
+-templates/deployment-blue.yaml:
+	{{ if .Values.blue.enabled }}
+	apiVersion: extensions/v1beta1
+	kind: Deployment
+	metadata:
+	  name: {{ template "blue-green.fullname" . }}-blue
+	  labels:
+		release: {{ .Release.Name }}
+		chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+		app: {{ template "blue-green.name" . }}
+	spec:
+	  replicas: {{ .Values.replicaCount }}
+	  template:
+		metadata:
+		  labels:
+			app: {{ template "blue-green.name" . }}
+			release: {{ .Release.Name }}
+			slot: blue
+		spec:
+		  containers:
+			- name: {{ template "blue-green.name" . }}-blue
+			  image: nginx:stable
+			  imagePullPolicy: IfNotPresent
+			  ports:
+				- name: http
+				  containerPort: 80
+				  protocol: TCP
+			  # This (and the volumes section below) mount the config map as a volume.
+			  volumeMounts:
+				- mountPath: /usr/share/nginx/html
+				  name: wwwdata-volume
+		  volumes:
+			- name: wwwdata-volume
+			  configMap:
+				name: {{ template "blue-green.fullname" . }}
+	{{ end }}
+-templates/deployment-green.yaml:
+	{{ if .Values.green.enabled }}
+	apiVersion: extensions/v1beta1
+	kind: Deployment
+	metadata:
+	  name: {{ template "blue-green.fullname" . }}-green
+	  labels:
+		release: {{ .Release.Name }}
+		chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+		app: {{ template "blue-green.name" . }}
+	spec:
+	  replicas: {{ .Values.replicaCount }}
+	  template:
+		metadata:
+		  labels:
+			app: {{ template "blue-green.name" . }}
+			release: {{ .Release.Name }}
+			slot: green
+		spec:
+		  containers:
+			- name: {{ template "blue-green.name" . }}-green
+			  image: nginx:stable
+			  imagePullPolicy: IfNotPresent
+			  ports:
+				- name: http
+				  containerPort: 80
+				  protocol: TCP
+			  # This (and the volumes section below) mount the config map as a volume.
+			  volumeMounts:
+				- mountPath: /usr/share/nginx/html
+				  name: wwwdata-volume
+		  volumes:
+			- name: wwwdata-volume
+			  configMap:
+				name: {{ template "blue-green.fullname" . }}
+	{{ end }}
+-helm install bluegreen
