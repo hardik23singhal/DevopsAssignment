@@ -53,7 +53,7 @@ Step 5: We will write the ansible playbook to run the automation script. (myhapr
     - name: "copying data to target node"
       copy:
         dest: /var/www/html/index.html
-        content: "Hello Rakuten. This Site coming from the target Node"
+        content: "Hello World. This Site coming from the target Node"
     - name: "Httpd service start"
       service:
         name: httpd
@@ -78,4 +78,4 @@ We can use the ip of the controlnode to access the webpage running on the target
 http://localhost:8080/
 
 We would be able to access the site from the target node as a webpage below :
-**“Hello Rakuten. This Site coming from the target Node”** .
+**“Hello World. This Site coming from the target Node”** .
